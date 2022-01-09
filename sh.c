@@ -13,6 +13,10 @@
 
 #define MAXARGS 10
 
+#define COLOR_ORANGE "\e[38;5;214m"
+#define COLOR_GREEN "\e[38;5;76m"
+#define COLOR_RESET "\x1b[0m"
+
 struct cmd {
   int type;
 };
@@ -133,7 +137,7 @@ runcmd(struct cmd *cmd)
 int
 getcmd(char *buf, int nbuf)
 {
-  printf(2, "$ ");
+  printf(2, COLOR_ORANGE"tanjim@xv6"COLOR_GREEN":$ "COLOR_RESET);
   memset(buf, 0, nbuf);
   gets(buf, nbuf);
   if(buf[0] == 0) // EOF
