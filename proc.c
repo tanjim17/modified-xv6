@@ -6,6 +6,8 @@
 #include "x86.h"
 #include "proc.h"
 #include "spinlock.h"
+#include "random.h"
+#include "pstat.h"
 
 struct {
   struct spinlock lock;
@@ -19,6 +21,36 @@ extern void forkret(void);
 extern void trapret(void);
 
 static void wakeup1(void *chan);
+
+void getpinfo1(struct pstat* ps) {
+  acquire(&ptable.lock);
+	for(struct proc* p = ptable.proc; p != &(ptable.proc[NPROC]); p++) {
+		const int index = p - ptable.proc;
+		if(p->state != UNUSED) {
+      ps->inuse[index] = p->inuse;
+      ps->tickets[index] = p->tickets;
+			ps->pid[index] = p->pid;
+			ps->ticks[index] = p->ticks;
+		}
+	}
+	release(&ptable.lock);
+}
+
+int total_tickets;
+void setproctickets(struct proc* pp, int n)
+{
+  //cprintf("yo: %d %d\n", pp->pid, n);
+	total_tickets -= pp->tickets;
+	pp->tickets = n;
+	total_tickets += pp->tickets;
+}
+
+void settickets1(struct proc* pp, int n) {
+  //cprintf("yay: %d %d\n", pp->pid, n);
+  acquire(&ptable.lock);
+  setproctickets(pp, n);
+  release(&ptable.lock);
+}
 
 void
 pinit(void)
@@ -200,6 +232,8 @@ fork(void)
   np->parent = curproc;
   *np->tf = *curproc->tf;
 
+  setproctickets(np, curproc->tickets);
+  //cprintf("abc\n");
   // Clear %eax so that fork returns 0 in the child.
   np->tf->eax = 0;
 
@@ -261,6 +295,8 @@ exit(void)
     }
   }
 
+  setproctickets(curproc, 0);
+
   // Jump into the scheduler, never to return.
   curproc->state = ZOMBIE;
   sched();
@@ -295,6 +331,8 @@ wait(void)
         p->name[0] = 0;
         p->killed = 0;
         p->state = UNUSED;
+        p->ticks = 0;
+				setproctickets(p, 0);
         release(&ptable.lock);
         return pid;
       }
@@ -325,16 +363,38 @@ scheduler(void)
   struct proc *p;
   struct cpu *c = mycpu();
   c->proc = 0;
-  
+
+  acquire(&ptable.lock);
+	setproctickets(ptable.proc, 1);
+	release(&ptable.lock);
+
+  static _Bool have_seeded = 0;
+	const int seed = 1323;
+	if(!have_seeded)
+	{
+		srand(seed);
+		have_seeded = 1;
+	}
+
   for(;;){
     // Enable interrupts on this processor.
     sti();
 
+    const int golden_ticket = rand() % (total_tickets + 1);
+		int ticket_count = 0;
+    //cprintf("new %d\n", golden_ticket);
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
       if(p->state != RUNNABLE)
         continue;
+
+      ticket_count += p->tickets;
+      //cprintf("%d %d %d\n", p->pid, ticket_count, golden_ticket);
+      if(ticket_count < golden_ticket)
+        continue;
+      else if(ticket_count > total_tickets)
+        cprintf("Extra: %d | %d | %d\n", ticket_count, total_tickets, golden_ticket);
 
       // Switch to chosen process.  It is the process's job
       // to release ptable.lock and then reacquire it
@@ -343,7 +403,12 @@ scheduler(void)
       switchuvm(p);
       p->state = RUNNING;
 
+      p->inuse = 1;
+			const int tickstart = ticks;
       swtch(&(c->scheduler), p->context);
+      p->ticks += ticks - tickstart;
+			p->inuse = 0;
+
       switchkvm();
 
       // Process is done running for now.
