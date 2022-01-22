@@ -24,14 +24,12 @@ static void wakeup1(void *chan);
 
 void getpinfo1(struct pstat* ps) {
   acquire(&ptable.lock);
-	for(struct proc* p = ptable.proc; p != &(ptable.proc[NPROC]); p++) {
-		const int index = p - ptable.proc;
-		if(p->state != UNUSED) {
-      ps->inuse[index] = p->inuse;
-      ps->tickets[index] = p->tickets;
-			ps->pid[index] = p->pid;
-			ps->ticks[index] = p->ticks;
-		}
+	for(struct proc* p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
+		const int idx = p - ptable.proc;
+    ps->inuse[idx] = p->state == UNUSED ? 0 : 1;
+    ps->tickets[idx] = p->tickets;
+		ps->pid[idx] = p->pid;
+		ps->ticks[idx] = p->ticks;
 	}
 	release(&ptable.lock);
 }
@@ -370,8 +368,7 @@ scheduler(void)
 
   static _Bool have_seeded = 0;
 	const int seed = 1323;
-	if(!have_seeded)
-	{
+	if(!have_seeded) {
 		srand(seed);
 		have_seeded = 1;
 	}
@@ -380,9 +377,9 @@ scheduler(void)
     // Enable interrupts on this processor.
     sti();
 
-    const int golden_ticket = rand() % (total_tickets + 1);
+    const int winning_ticket = rand() % (total_tickets + 1);
 		int ticket_count = 0;
-    //cprintf("new %d\n", golden_ticket);
+    //cprintf("new %d\n", winning_ticket);
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
@@ -390,11 +387,9 @@ scheduler(void)
         continue;
 
       ticket_count += p->tickets;
-      //cprintf("%d %d %d\n", p->pid, ticket_count, golden_ticket);
-      if(ticket_count < golden_ticket)
+      //cprintf("%d %d %d\n", p->pid, ticket_count, winning_ticket);
+      if(ticket_count < winning_ticket)
         continue;
-      else if(ticket_count > total_tickets)
-        cprintf("Extra: %d | %d | %d\n", ticket_count, total_tickets, golden_ticket);
 
       // Switch to chosen process.  It is the process's job
       // to release ptable.lock and then reacquire it
@@ -403,17 +398,16 @@ scheduler(void)
       switchuvm(p);
       p->state = RUNNING;
 
-      p->inuse = 1;
 			const int tickstart = ticks;
       swtch(&(c->scheduler), p->context);
       p->ticks += ticks - tickstart;
-			p->inuse = 0;
 
       switchkvm();
 
       // Process is done running for now.
       // It should have changed its p->state before coming back.
       c->proc = 0;
+      break;
     }
     release(&ptable.lock);
 
