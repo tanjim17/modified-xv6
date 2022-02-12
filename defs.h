@@ -52,6 +52,14 @@ struct inode*   nameiparent(char*, char*);
 int             readi(struct inode*, char*, uint, uint);
 void            stati(struct inode*, struct stat*);
 int             writei(struct inode*, char*, uint, uint);
+int             createSwapFile(struct proc* p);
+int             readFromSwapFile(struct proc * p, char* buffer, uint placeOnFile, uint size);
+int             writeToSwapFile(struct proc* p, char* buffer, uint placeOnFile, uint size);
+int             removeSwapFile(struct proc* p);
+int 			page_out(struct proc * p, uint va, pde_t *pgdir);
+int 			page_in(struct proc * p, int mem_pg_info_idx, uint va, char* buff);
+void 			copy_swap_file(struct proc* src, struct proc* dst);
+
 
 // ide.c
 void            ideinit(void);
@@ -120,9 +128,15 @@ void            userinit(void);
 int             wait(void);
 void            wakeup(void*);
 void            yield(void);
+uint			is_shell_or_init(struct proc* p);
 
 // swtch.S
 void            swtch(struct context**, struct context*);
+
+// sysfile
+struct inode*   create(char *path, short type, short major, short minor);
+int             isdirempty(struct inode *dp);
+
 
 // spinlock.c
 void            acquire(struct spinlock*);
@@ -185,6 +199,27 @@ void            switchuvm(struct proc*);
 void            switchkvm(void);
 int             copyout(pde_t*, uint, void*, uint);
 void            clearpteu(pde_t *pgdir, char *uva);
+
+uint get_pa(int va, pde_t *pgdir);
+
+void update_pageout_flags(struct proc* p, int va, pde_t * pgdir);
+void update_pagein_flags(struct proc* p, int va, int pagePAddr, pde_t * pgdir);
+
+void insert_mem_pg_info(struct proc *p, pde_t *pgdir, uint va);
+void reset_mem_pg_info(struct proc *p, int index);
+void remove_pg_from_mem(struct proc *p, uint va, const pde_t *pgdir);
+
+uint is_queue_full(const struct proc* p);
+int get_queue_tail_idx(const struct proc *p);
+int get_queue_head_idx(const struct proc *p);
+void adjust_queue(struct proc *p,int from);
+void shift_queue_head(struct proc* p);
+
+int swap_in(struct proc* p, int cr2);
+void swap_out(struct proc *p);
+int page_in(struct proc * p, int ram_managerIndex, uint va, char* buff);
+int page_out(struct proc * p, uint va, pde_t *pgdir);
+uint is_page_in_disk(struct proc *p, int va);
 
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))
