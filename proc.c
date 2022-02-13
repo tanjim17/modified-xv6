@@ -274,10 +274,14 @@ exit(void)
     for (int i = 0; i < MAX_PSYC_PAGES; ++i) {
       curproc->mem_pg_info[i].state = NOT_USED;
       curproc->mem_pg_info[i].va = 0;
+      curproc->mem_pg_info[i].ref = 0;
+      curproc->mem_pg_info[i].mod = 0;
     }
     for (int i = 0; i < (MAX_TOTAL_PAGES - MAX_PSYC_PAGES); ++i) {
       curproc->disk_pg_info[i].state = NOT_USED;
       curproc->disk_pg_info[i].va = 0;
+      curproc->disk_pg_info[i].ref = 0;
+      curproc->disk_pg_info[i].mod = 0;
     }
   }
 
@@ -506,9 +510,17 @@ wakeup1(void *chan)
 {
   struct proc *p;
 
-  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
-    if(p->state == SLEEPING && p->chan == chan)
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
+    if(p->state == SLEEPING && p->chan == chan) {
       p->state = RUNNABLE;
+      for (int i = 0; i < MAX_PSYC_PAGES; ++i) {
+        p->mem_pg_info[i].ref = 0;
+      }
+      for (int i = 0; i < MAX_TOTAL_PAGES - MAX_PSYC_PAGES; ++i) {
+        p->disk_pg_info[i].ref = 0;
+      }
+    }
+  }
 }
 
 // Wake up all processes sleeping on chan.

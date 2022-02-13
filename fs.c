@@ -816,6 +816,7 @@ int page_in(struct proc* p, int mem_pg_info_idx, uint va, char* buff) {
       val = readFromSwapFile(p, buff, i*PGSIZE, PGSIZE);
       if (val == -1) break;
       p->mem_pg_info[mem_pg_info_idx] = p->disk_pg_info[i];
+      p->mem_pg_info[mem_pg_info_idx].ref = 1;
       p->disk_pg_info[i].state = NOT_USED;
       break;
     }
@@ -823,7 +824,7 @@ int page_in(struct proc* p, int mem_pg_info_idx, uint va, char* buff) {
   return val;
 }
 
-int page_out(struct proc * p, uint va, pde_t *pgdir) {
+int page_out(struct proc * p, uint va, pde_t *pgdir, uint ref, uint mod) {
   int idx = -1;
   for (int i = 0; i < (MAX_TOTAL_PAGES - MAX_PSYC_PAGES); i++) {
     if (p->disk_pg_info[i].state == NOT_USED) {
@@ -832,6 +833,8 @@ int page_out(struct proc * p, uint va, pde_t *pgdir) {
       p->disk_pg_info[idx].state = USED;
       p->disk_pg_info[idx].va = va;
       p->disk_pg_info[idx].pgdir = pgdir;
+      p->disk_pg_info[idx].ref = ref;
+      p->disk_pg_info[idx].mod = mod;
       break;
     }
   }

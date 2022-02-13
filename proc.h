@@ -40,6 +40,8 @@ struct pg_info {
   enum pg_state state;  
   uint va;
   pde_t* pgdir;
+  uint ref; // reference bit
+  uint mod; // modify bit
 };
 
 enum procstate { UNUSED, EMBRYO, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
