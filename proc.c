@@ -16,6 +16,11 @@ struct {
 
 static struct proc *initproc;
 
+struct pgmap {
+  uint vpn;
+  uint ppn;
+};
+
 int nextpid = 1;
 extern void forkret(void);
 extern void trapret(void);
@@ -142,6 +147,18 @@ found:
   memset(p->context, 0, sizeof *p->context);
   p->context->eip = (uint)forkret;
 
+  // paging: initializing paging stuff
+	if(!is_shell_or_init(p)) {
+    createSwapFile(p);
+    p->mem_pg_count = 0;
+    p->pg_fault_count = 0;
+    p->queue_head_idx=0;
+    for(int i = 0; i < MAX_PSYC_PAGES; i++)
+      p->mem_pg_info[i].state = NOT_USED;
+    for(int i = 0; i < MAX_TOTAL_PAGES - MAX_PSYC_PAGES; i++)
+      p->disk_pg_info[i].state = NOT_USED;
+  }
+
   return p;
 }
 
@@ -250,6 +267,19 @@ fork(void)
 
   release(&ptable.lock);
 
+   // paging: copy parent info
+  if (!is_shell_or_init(curproc)) {
+    copy_swap_file(curproc, np);
+    for (i = 0; i < MAX_PSYC_PAGES; i++){
+      np->mem_pg_info[i] = curproc->mem_pg_info[i];
+      np->mem_pg_info[i].pgdir = np->pgdir;
+    }
+    for (i = 0; i < (MAX_TOTAL_PAGES - MAX_PSYC_PAGES); i++){
+      np->disk_pg_info[i] = curproc->disk_pg_info[i];
+      np->disk_pg_info[i].pgdir = np->pgdir;
+    }
+  }
+
   return pid;
 }
 
@@ -265,6 +295,27 @@ exit(void)
 
   if(curproc == initproc)
     panic("init exiting");
+
+  // paging: remove swap file and paging info
+  if(!is_shell_or_init(curproc)) {
+    if (removeSwapFile(curproc) != 0)
+      panic("exit: error in deleting swap file!");
+    curproc->mem_pg_count = 0;
+    curproc->pg_fault_count = 0;
+    curproc->queue_head_idx = 0;
+    for (int i = 0; i < MAX_PSYC_PAGES; ++i) {
+      curproc->mem_pg_info[i].state = NOT_USED;
+      curproc->mem_pg_info[i].va = 0;
+      curproc->mem_pg_info[i].ref = 0;
+      curproc->mem_pg_info[i].mod = 0;
+    }
+    for (int i = 0; i < (MAX_TOTAL_PAGES - MAX_PSYC_PAGES); ++i) {
+      curproc->disk_pg_info[i].state = NOT_USED;
+      curproc->disk_pg_info[i].va = 0;
+      curproc->disk_pg_info[i].ref = 0;
+      curproc->disk_pg_info[i].mod = 0;
+    }
+  }
 
   // Close all open files.
   for(fd = 0; fd < NOFILE; fd++){
@@ -523,9 +574,17 @@ wakeup1(void *chan)
 {
   struct proc *p;
 
-  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
-    if(p->state == SLEEPING && p->chan == chan)
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
+    if(p->state == SLEEPING && p->chan == chan) {
       p->state = RUNNABLE;
+      for (int i = 0; i < MAX_PSYC_PAGES; ++i) {
+        p->mem_pg_info[i].ref = 0;
+      }
+      for (int i = 0; i < MAX_TOTAL_PAGES - MAX_PSYC_PAGES; ++i) {
+        p->disk_pg_info[i].ref = 0;
+      }
+    }
+  }
 }
 
 // Wake up all processes sleeping on chan.
@@ -593,6 +652,44 @@ procdump(void)
       for(i=0; i<10 && pc[i] != 0; i++)
         cprintf(" %p", pc[i]);
     }
+
+    pde_t* pgdir = p->pgdir;
+    cprintf("\nPage tables:\n\tmemory location of page directory = 0x%x\n", V2P(pgdir));
+
+    for(i = 0; i < NPDENTRIES; i++) {
+      uint pde = pgdir[i];
+      if((pde & PTE_P) && (pde & PTE_U)) {
+        uint pgtab_pa = PTE_ADDR(pde);
+        uint pgtab_ppn = pde >> PTXSHIFT;
+        pte_t* pgtab = (pte_t*)P2V(pgtab_pa);
+
+        uint j, user_pg_count = 0;
+        struct pgmap map[NPTENTRIES];
+        for(j = 0; j < NPTENTRIES; j++) {
+          uint pte = pgtab[j];
+          if((pte & PTE_P) && (pte & PTE_U)) {
+            if(!user_pg_count) {
+              cprintf("\tpdir PTE %d, %d:\n\t\tmemory location of page table = ​0x%x\n", i, pgtab_ppn, pgtab_pa);
+            }
+            uint pa = PTE_ADDR(pte);
+            uint ppn = pte >> PTXSHIFT;
+            cprintf("\t\tptbl PTE %d, %d, 0x%x\n", j, ppn, pa);
+            map[user_pg_count].vpn = (i << 10) + j;
+            map[user_pg_count++].ppn = ppn;
+          }
+        }
+        if(user_pg_count) {
+          cprintf("\t\tPage mappings:\n");
+          for(j = 0; j < user_pg_count; j++) {
+            cprintf("\t\t%d -> %d\n", map[j].vpn, map[j].ppn);
+          }
+        }
+      }
+    }
     cprintf("\n");
   }
+}
+
+uint is_shell_or_init(struct proc* p){
+  return p && p->pid <= 2;
 }

@@ -7,6 +7,8 @@
 #include "proc.h"
 #include "elf.h"
 
+const uint FIFO = 1; // if 1, fifo algo. if 0, nru algo
+
 extern char data[];  // defined by kernel.ld
 pde_t *kpgdir;  // for use in scheduler()
 
@@ -216,6 +218,15 @@ loaduvm(pde_t *pgdir, char *addr, struct inode *ip, uint offset, uint sz)
   return 0;
 }
 
+void print_queues(struct proc* p) {
+  cprintf("idx--va--state  (memory: left side, disk: right side)\n");
+  for(int i=0; i <MAX_PSYC_PAGES; i++) {
+    cprintf("%d %d %d", i, p->mem_pg_info[i].va, p->mem_pg_info[i].state);
+    cprintf("\t%d %d %d\n", i, p->disk_pg_info[i].va, p->disk_pg_info[i].state);
+  }
+  cprintf("\n");
+}
+
 // Allocate page tables and physical memory to grow process from oldsz to
 // newsz, which need not be page aligned.  Returns new size or 0 on error.
 int
@@ -223,11 +234,17 @@ allocuvm(pde_t *pgdir, uint oldsz, uint newsz)
 {
   char *mem;
   uint a;
+  struct proc* p = myproc();
 
   if(newsz >= KERNBASE)
     return 0;
   if(newsz < oldsz)
     return oldsz;
+
+  // paging: check if number of pages exceeds max number of pages
+  if (PGROUNDUP(newsz)/PGSIZE > MAX_TOTAL_PAGES && !is_shell_or_init(p)) {
+  	panic("number of pages exceeds maximum value!");
+  }
 
   a = PGROUNDUP(oldsz);
   for(; a < newsz; a += PGSIZE){
@@ -244,6 +261,18 @@ allocuvm(pde_t *pgdir, uint oldsz, uint newsz)
       kfree(mem);
       return 0;
     }
+
+    // paging: insert into page info list for memory
+    if (p && !is_shell_or_init(p)) {
+	    if (!is_queue_full(p)) {
+        insert_mem_pg_info(p, pgdir, a);
+        cprintf("\n");
+      } else {
+        swap_out(p);
+        insert_mem_pg_info(p, pgdir, a);
+        print_queues(p);
+      }
+    }
   }
   return newsz;
 }
@@ -255,6 +284,9 @@ allocuvm(pde_t *pgdir, uint oldsz, uint newsz)
 int
 deallocuvm(pde_t *pgdir, uint oldsz, uint newsz)
 {
+  struct proc* p = myproc();
+  if(p == 0) return oldsz;
+  
   pte_t *pte;
   uint a, pa;
 
@@ -272,6 +304,8 @@ deallocuvm(pde_t *pgdir, uint oldsz, uint newsz)
         panic("kfree");
       char *v = P2V(pa);
       kfree(v);
+      // paging: remove from queue
+      if(!is_shell_or_init(p)) remove_pg_from_mem(p, a, pgdir);
       *pte = 0;
     }
   }
@@ -315,6 +349,9 @@ clearpteu(pde_t *pgdir, char *uva)
 pde_t*
 copyuvm(pde_t *pgdir, uint sz)
 {
+  struct proc* p = myproc();
+  if(p == 0) return 0;
+
   pde_t *d;
   pte_t *pte;
   uint pa, i, flags;
@@ -325,6 +362,13 @@ copyuvm(pde_t *pgdir, uint sz)
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walkpgdir(pgdir, (void *) i, 0)) == 0)
       panic("copyuvm: pte should exist");
+    
+    // paging: update PG flag
+    if (*pte & PTE_PG) {
+      update_pageout_flags(p, i, d);
+      continue;
+    }
+
     if(!(*pte & PTE_P))
       panic("copyuvm: page not present");
     pa = PTE_ADDR(*pte);
@@ -392,3 +436,174 @@ copyout(pde_t *pgdir, uint va, void *p, uint len)
 //PAGEBREAK!
 // Blank page.
 
+uint get_pa(int va, pde_t *pgdir){
+  pte_t* pte = walkpgdir(pgdir, (int*)va, 0);
+  if(!pte) return -1;
+  return PTE_ADDR(*pte);
+}
+
+void update_pageout_flags(struct proc* p, int va, pde_t * pgdir){
+  pte_t *pte = walkpgdir(pgdir, (int*)va, 0);
+  if (!pte) panic("update_pageout_flags: pte doesn't exist!");
+  *pte |= PTE_PG;
+  *pte &= ~PTE_P;
+  *pte &= PTE_FLAGS(*pte);
+}
+
+void update_pagein_flags(struct proc* p, int va, int pg_pa, pde_t * pgdir){
+  pte_t *pte = walkpgdir(pgdir, (int*)va, 0);
+  if (!pte) panic("update_pagein_flags: pte doesn't exist!");
+  if (*pte & PTE_P) panic("update_pagein_flags: page is already in memory!");
+  *pte |= PTE_P | PTE_U | PTE_A;
+  *pte &= ~PTE_PG;
+  *pte |= pg_pa;
+}
+
+uint is_page_in_disk(struct proc *p, int va) {
+  pte_t *pte;
+  pte = walkpgdir(p->pgdir, (char *)va, 0);
+  return (*pte & PTE_PG);
+}
+
+void swap_out(struct proc *p) {
+  int pg_idx = -1;
+  if(FIFO) pg_idx = get_queue_head_idx(p);
+  else pg_idx = get_nru_oldest_idx(p);
+  struct pg_info out_pg_info = p->mem_pg_info[pg_idx];
+
+  // writes into swap file
+  page_out(p, out_pg_info.va, out_pg_info.pgdir, out_pg_info.ref, out_pg_info.mod);
+  uint pg_pa = get_pa(out_pg_info.va, out_pg_info.pgdir);
+  kfree((char*)P2V(pg_pa));
+  update_pageout_flags(p, out_pg_info.va, out_pg_info.pgdir);
+  reset_mem_pg_info(p, pg_idx);
+  shift_queue_head(p);
+  cprintf("swap out idx: %d\n", pg_idx);
+}
+
+int swap_in(struct proc* p, int trap_va) {
+  p->pg_fault_count++;
+  trap_va = PGROUNDDOWN(trap_va);
+  cprintf("\033[0;31mtrap_va = %d\033[0m\n", trap_va);
+
+  // allocate space for the swapped in page
+  char* new_page = kalloc();
+  memset(new_page, 0, PGSIZE);
+
+  if (!is_queue_full(p)) {
+    int swap_in_idx = -1;
+    if(FIFO) swap_in_idx = get_queue_tail_idx(p);
+    else swap_in_idx = get_nru_free_slot_idx(p);
+	  cprintf("swap in: (free)index = %d\n", swap_in_idx);
+    update_pagein_flags(p, trap_va, V2P(new_page), p->pgdir);
+    page_in(p, swap_in_idx, trap_va, (char*)trap_va);
+    print_queues(p);
+    return 1;
+  }
+
+  /*no free page available, need to swap out one*/
+
+  int swap_out_idx = -1;
+  if(FIFO) swap_out_idx = get_queue_head_idx(p);
+  else swap_out_idx = get_nru_oldest_idx(p);
+  cprintf("swap in: index = %d\n", swap_out_idx);
+  struct pg_info out_pg_info = p->mem_pg_info[swap_out_idx];
+
+  // paging in
+  char buff[PGSIZE];
+  update_pagein_flags(p, trap_va, V2P(new_page), p->pgdir);
+  page_in(p, swap_out_idx, trap_va, buff);
+  memmove(new_page, buff, PGSIZE);
+
+  // paging out
+  page_out(p, out_pg_info.va, out_pg_info.pgdir, out_pg_info.ref, out_pg_info.mod);
+  uint pg_pa = get_pa(out_pg_info.va, out_pg_info.pgdir);
+  kfree((char*)P2V(pg_pa));
+  update_pageout_flags(p, out_pg_info.va, out_pg_info.pgdir);
+  shift_queue_head(p);
+  print_queues(p);
+  return 1;
+}
+
+void insert_mem_pg_info(struct proc *p, pde_t *pgdir, uint va) {
+  int index = -1;
+  if(FIFO) index = get_queue_tail_idx(p);
+  else index = get_nru_free_slot_idx(p);
+  p->mem_pg_info[index].state = USED;
+  p->mem_pg_info[index].va = va;
+  p->mem_pg_info[index].pgdir = pgdir;
+  p->mem_pg_info[index].ref = 1;
+  p->mem_pg_info[index].mod = 0;
+  p->mem_pg_count++;
+  cprintf("insert into memory: idx = %d, va = %d\n", index, va);
+}
+
+void remove_pg_from_mem(struct proc *p, uint va, const pde_t *pgdir){
+  if (p == 0) return;
+  for (int i = 0; i < MAX_PSYC_PAGES; i++) {
+    if (p->mem_pg_info[i].state == USED && p->mem_pg_info[i].va == va
+      && p->mem_pg_info[i].pgdir == pgdir) {
+      cprintf("removing from memory: va = %d\n", va);
+      reset_mem_pg_info(p, i);
+      if(FIFO) adjust_queue(p, i);
+      print_queues(p);
+      return;
+    }
+  }
+}
+
+void reset_mem_pg_info(struct proc *p, int index){
+  p->mem_pg_info[index].state = NOT_USED;
+  p->mem_pg_count--;
+}
+
+uint is_queue_full(const struct proc *p) {
+  return p->mem_pg_count == MAX_PSYC_PAGES;
+}
+
+int get_queue_tail_idx(const struct proc *p) {
+  return (p->queue_head_idx + p->mem_pg_count) % MAX_PSYC_PAGES;
+}
+
+int get_queue_head_idx(const struct proc *p) {
+  return p->queue_head_idx;
+}
+
+void shift_queue_head(struct proc *p) {
+  p->queue_head_idx = (p->queue_head_idx + 1) % MAX_PSYC_PAGES;
+}
+
+void adjust_queue(struct proc *p, int from) {
+  if (from < 0) panic("adjust queue: invalid argument!");
+  for (int i = from, nxt_idx = (from + 1) % MAX_PSYC_PAGES;
+       nxt_idx != (get_queue_tail_idx(p) + 1) % MAX_PSYC_PAGES; nxt_idx = (nxt_idx + 1) % MAX_PSYC_PAGES) { ;
+    if (p->mem_pg_info[i].state == NOT_USED && p->mem_pg_info[nxt_idx].state == USED) {
+      p->mem_pg_info[i] = p->mem_pg_info[nxt_idx];
+      p->mem_pg_info[nxt_idx].state = NOT_USED;
+      i = nxt_idx;
+    } else if (p->mem_pg_info[i].state == USED) i = nxt_idx;
+  }
+}
+
+int get_nru_free_slot_idx(const struct proc *p) {
+  for (int i = 0; i < MAX_PSYC_PAGES; ++i) {
+    if(p->mem_pg_info[i].state == NOT_USED) return i;
+  }
+  panic("nru: no free slot");
+}
+
+int get_nru_oldest_idx(const struct proc *p) {
+  for (int i = 0; i < MAX_PSYC_PAGES; ++i) {
+    if(p->mem_pg_info[i].state == USED && !p->mem_pg_info[i].ref && !p->mem_pg_info[i].mod) return i;
+  }
+  for (int i = 0; i < MAX_PSYC_PAGES; ++i) {
+    if(p->mem_pg_info[i].state == USED && !p->mem_pg_info[i].ref && p->mem_pg_info[i].mod) return i;
+  }
+  for (int i = 0; i < MAX_PSYC_PAGES; ++i) {
+    if(p->mem_pg_info[i].state == USED && p->mem_pg_info[i].ref && p->mem_pg_info[i].mod) return i;
+  }
+  for (int i = 0; i < MAX_PSYC_PAGES; ++i) {
+    if(p->mem_pg_info[i].state == USED) return i;
+  }
+  panic("nru: no used page!");
+}
