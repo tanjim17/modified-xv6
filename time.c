@@ -3,6 +3,10 @@
 #include "user.h"
 
 int main(int argc, char *argv[]) {
+    if (argc <= 1) {
+        printf(1, "give a command after \"time\"!\n");
+        exit();
+    }
     char** argv1 = (char**)malloc((argc - 1)*sizeof(char*));
     for (int i = 1; i < argc; i++) {
         argv1[i - 1] = argv[i];

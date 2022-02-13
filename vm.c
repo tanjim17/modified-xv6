@@ -219,12 +219,12 @@ loaduvm(pde_t *pgdir, char *addr, struct inode *ip, uint offset, uint sz)
 }
 
 void print_queues(struct proc* p) {
-  cprintf("idx--va--state  (memory: left side, disk: right side)\n");
+  // cprintf("idx--va--state  (memory: left side, disk: right side)\n");
   for(int i=0; i <MAX_PSYC_PAGES; i++) {
-    cprintf("%d %d %d", i, p->mem_pg_info[i].va, p->mem_pg_info[i].state);
-    cprintf("\t%d %d %d\n", i, p->disk_pg_info[i].va, p->disk_pg_info[i].state);
+    // cprintf("%d %d %d", i, p->mem_pg_info[i].va, p->mem_pg_info[i].state);
+    // cprintf("\t%d %d %d\n", i, p->disk_pg_info[i].va, p->disk_pg_info[i].state);
   }
-  cprintf("\n");
+  // cprintf("\n");
 }
 
 // Allocate page tables and physical memory to grow process from oldsz to
@@ -250,13 +250,13 @@ allocuvm(pde_t *pgdir, uint oldsz, uint newsz)
   for(; a < newsz; a += PGSIZE){
     mem = kalloc();
     if(mem == 0){
-      cprintf("allocuvm out of memory\n");
+      // cprintf("allocuvm out of memory\n");
       deallocuvm(pgdir, newsz, oldsz);
       return 0;
     }
     memset(mem, 0, PGSIZE);
     if(mappages(pgdir, (char*)a, PGSIZE, V2P(mem), PTE_W|PTE_U) < 0){
-      cprintf("allocuvm out of memory (2)\n");
+      // cprintf("allocuvm out of memory (2)\n");
       deallocuvm(pgdir, newsz, oldsz);
       kfree(mem);
       return 0;
@@ -266,7 +266,7 @@ allocuvm(pde_t *pgdir, uint oldsz, uint newsz)
     if (p && !is_shell_or_init(p)) {
 	    if (!is_queue_full(p)) {
         insert_mem_pg_info(p, pgdir, a);
-        cprintf("\n");
+        // cprintf("\n");
       } else {
         swap_out(p);
         insert_mem_pg_info(p, pgdir, a);
@@ -478,13 +478,13 @@ void swap_out(struct proc *p) {
   update_pageout_flags(p, out_pg_info.va, out_pg_info.pgdir);
   reset_mem_pg_info(p, pg_idx);
   shift_queue_head(p);
-  cprintf("swap out idx: %d\n", pg_idx);
+  // cprintf("swap out idx: %d\n", pg_idx);
 }
 
 int swap_in(struct proc* p, int trap_va) {
   p->pg_fault_count++;
   trap_va = PGROUNDDOWN(trap_va);
-  cprintf("\033[0;31mtrap_va = %d\033[0m\n", trap_va);
+  // cprintf("\033[0;31mtrap_va = %d\033[0m\n", trap_va);
 
   // allocate space for the swapped in page
   char* new_page = kalloc();
@@ -494,7 +494,7 @@ int swap_in(struct proc* p, int trap_va) {
     int swap_in_idx = -1;
     if(FIFO) swap_in_idx = get_queue_tail_idx(p);
     else swap_in_idx = get_nru_free_slot_idx(p);
-	  cprintf("swap in: (free)index = %d\n", swap_in_idx);
+	  // cprintf("swap in: (free)index = %d\n", swap_in_idx);
     update_pagein_flags(p, trap_va, V2P(new_page), p->pgdir);
     page_in(p, swap_in_idx, trap_va, (char*)trap_va);
     print_queues(p);
@@ -506,7 +506,7 @@ int swap_in(struct proc* p, int trap_va) {
   int swap_out_idx = -1;
   if(FIFO) swap_out_idx = get_queue_head_idx(p);
   else swap_out_idx = get_nru_oldest_idx(p);
-  cprintf("swap in: index = %d\n", swap_out_idx);
+  // cprintf("swap in: index = %d\n", swap_out_idx);
   struct pg_info out_pg_info = p->mem_pg_info[swap_out_idx];
 
   // paging in
@@ -535,7 +535,7 @@ void insert_mem_pg_info(struct proc *p, pde_t *pgdir, uint va) {
   p->mem_pg_info[index].ref = 1;
   p->mem_pg_info[index].mod = 0;
   p->mem_pg_count++;
-  cprintf("insert into memory: idx = %d, va = %d\n", index, va);
+  // cprintf("insert into memory: idx = %d, va = %d\n", index, va);
 }
 
 void remove_pg_from_mem(struct proc *p, uint va, const pde_t *pgdir){
@@ -543,7 +543,7 @@ void remove_pg_from_mem(struct proc *p, uint va, const pde_t *pgdir){
   for (int i = 0; i < MAX_PSYC_PAGES; i++) {
     if (p->mem_pg_info[i].state == USED && p->mem_pg_info[i].va == va
       && p->mem_pg_info[i].pgdir == pgdir) {
-      cprintf("removing from memory: va = %d\n", va);
+      // cprintf("removing from memory: va = %d\n", va);
       reset_mem_pg_info(p, i);
       if(FIFO) adjust_queue(p, i);
       print_queues(p);
