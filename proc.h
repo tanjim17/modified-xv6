@@ -49,6 +49,8 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+	int ticks;
+	int tickets;
 };
 
 // Process memory is laid out contiguously, low addresses first:
@@ -56,3 +58,6 @@ struct proc {
 //   original data and bss
 //   fixed-size stack
 //   expandable heap
+struct pstat;
+void settickets1(struct proc* pp, int n);
+void getpinfo1(struct pstat* ps);
