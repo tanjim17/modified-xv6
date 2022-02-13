@@ -117,7 +117,7 @@ found:
   memset(p->context, 0, sizeof *p->context);
   p->context->eip = (uint)forkret;
 
-  // initializing paging stuff
+  // paging: initializing paging stuff
 	if(!is_shell_or_init(p)) {
     createSwapFile(p);
     p->mem_pg_count = 0;
@@ -235,7 +235,7 @@ fork(void)
 
   release(&ptable.lock);
 
-   // copy parent info
+   // paging: copy parent info
   if (!is_shell_or_init(curproc)) {
     copy_swap_file(curproc, np);
     for (i = 0; i < MAX_PSYC_PAGES; i++){
@@ -264,7 +264,7 @@ exit(void)
   if(curproc == initproc)
     panic("init exiting");
 
-  //remove swap file and paging info
+  // paging: remove swap file and paging info
   if(!is_shell_or_init(curproc)) {
     if (removeSwapFile(curproc) != 0)
       panic("exit: error in deleting swap file!");

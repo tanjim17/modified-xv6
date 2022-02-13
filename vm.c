@@ -239,7 +239,7 @@ allocuvm(pde_t *pgdir, uint oldsz, uint newsz)
   if(newsz < oldsz)
     return oldsz;
 
-  // check if number of pages exceeds max number of pages
+  // paging: check if number of pages exceeds max number of pages
   if (PGROUNDUP(newsz)/PGSIZE > MAX_TOTAL_PAGES && !is_shell_or_init(p)) {
   	panic("number of pages exceeds maximum value!");
   }
@@ -260,7 +260,7 @@ allocuvm(pde_t *pgdir, uint oldsz, uint newsz)
       return 0;
     }
 
-    // insert into page info list for memory
+    // paging: insert into page info list for memory
     if (p && !is_shell_or_init(p)) {
 	    if (!is_queue_full(p)) {
         insert_mem_pg_info(p, pgdir, a);
@@ -302,6 +302,7 @@ deallocuvm(pde_t *pgdir, uint oldsz, uint newsz)
         panic("kfree");
       char *v = P2V(pa);
       kfree(v);
+      // paging: remove from queue
       if(!is_shell_or_init(p)) remove_pg_from_mem(p, a, pgdir);
       *pte = 0;
     }
@@ -360,6 +361,7 @@ copyuvm(pde_t *pgdir, uint sz)
     if((pte = walkpgdir(pgdir, (void *) i, 0)) == 0)
       panic("copyuvm: pte should exist");
     
+    // paging: update PG flag
     if (*pte & PTE_PG) {
       update_pageout_flags(p, i, d);
       continue;
