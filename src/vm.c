@@ -227,14 +227,14 @@ void print_queues(struct proc* p) {
   }
   // cprintf("\tidx--va--state(disk)\n");
   for(int i=0; i <MAX_PSYC_PAGES; i++) {
-    pte_t* pte = walkpgdir(p->pgdir, (char *)p->mem_pg_info[i].va, 0);
     // cprintf("%d %d %d", i, p->mem_pg_info[i].va, p->mem_pg_info[i].state);
     if (ALGO == NRU) {
+      // pte_t* pte = walkpgdir(p->pgdir, (char *)p->mem_pg_info[i].va, 0);
       // cprintf(" %d %d\t", (*pte & PTE_A) == PTE_A, (*pte & PTE_D) == PTE_D);
     }
     // cprintf("\t%d %d %d\n", i, p->disk_pg_info[i].va, p->disk_pg_info[i].state);
   }
-  // cprintf("\n");
+  cprintf("\n");
 }
 
 // Allocate page tables and physical memory to grow process from oldsz to

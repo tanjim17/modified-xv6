@@ -13,7 +13,7 @@ Base repo: https://github.com/mit-pdos/xv6-public
     * Run the user program `ps` for testing
 3. Created paging system with **FIFO algorithm** and **NRU algorithm** for memory management
     * Files modified: `vm.c` `fs.c` `proc.c` `proc.h` `trap.c` `sysfile.c` `mmu.h` `defs.h`
-    * Run the user program `mt` for testing (Before running, uncomment the *cprintf* functions in *vm.c*)
+    * Run the user program `mt` for testing (Before running, uncomment the lines related to printing in *vm.c*)
     * Use the enum variable `ALGO` in *vm.c* to switch algorithms
 #### Other minor modifications
 * Updated xv6's `atoi` function which couldn't handle negative number before
