@@ -306,14 +306,10 @@ exit(void)
     for (int i = 0; i < MAX_PSYC_PAGES; ++i) {
       curproc->mem_pg_info[i].state = NOT_USED;
       curproc->mem_pg_info[i].va = 0;
-      curproc->mem_pg_info[i].ref = 0;
-      curproc->mem_pg_info[i].mod = 0;
     }
     for (int i = 0; i < (MAX_TOTAL_PAGES - MAX_PSYC_PAGES); ++i) {
       curproc->disk_pg_info[i].state = NOT_USED;
       curproc->disk_pg_info[i].va = 0;
-      curproc->disk_pg_info[i].ref = 0;
-      curproc->disk_pg_info[i].mod = 0;
     }
   }
 
@@ -381,6 +377,7 @@ wait(void)
         p->killed = 0;
         p->state = UNUSED;
         p->ticks = 0;
+        p->prev_ticks = 0;
 				setproctickets(p, 0);
         release(&ptable.lock);
         return pid;
@@ -577,11 +574,11 @@ wakeup1(void *chan)
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
     if(p->state == SLEEPING && p->chan == chan) {
       p->state = RUNNABLE;
-      for (int i = 0; i < MAX_PSYC_PAGES; ++i) {
-        p->mem_pg_info[i].ref = 0;
-      }
-      for (int i = 0; i < MAX_TOTAL_PAGES - MAX_PSYC_PAGES; ++i) {
-        p->disk_pg_info[i].ref = 0;
+
+      // reset the reference flags if more than a certain amount of time has passed
+      if (ticks > p->prev_ticks + REF_FLAG_RESET_INTERVAL) {
+        reset_ref_flags(p);
+        p->prev_ticks = ticks;
       }
     }
   }

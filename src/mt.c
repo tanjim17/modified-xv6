@@ -8,8 +8,10 @@
 void memtest(){
 	int currsize = (uint)sbrk(0);
 	printf(1, "starting addr: %d\n", currsize);
+	char* a;
 	for (int i = currsize; i < MAX_TOTAL_PAGES * PGSIZE; i += PGSIZE) {
-		sbrk(PGSIZE);
+		a = sbrk(PGSIZE);
+		a[0] = 0; // for setting dirty bit while testing nru algorithm
 	}
 	if((uint)sbrk(0) != MAX_TOTAL_PAGES * PGSIZE) {
 		printf(1, "error!");

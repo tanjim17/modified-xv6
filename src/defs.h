@@ -56,7 +56,7 @@ int             createSwapFile(struct proc* p);
 int             readFromSwapFile(struct proc * p, char* buffer, uint placeOnFile, uint size);
 int             writeToSwapFile(struct proc* p, char* buffer, uint placeOnFile, uint size);
 int             removeSwapFile(struct proc* p);
-int 			page_out(struct proc * p, uint va, pde_t *pgdir, uint ref, uint mod);
+int 			page_out(struct proc * p, uint va, pde_t *pgdir);
 int 			page_in(struct proc * p, int mem_pg_info_idx, uint va, char* buff);
 void 			copy_swap_file(struct proc* src, struct proc* dst);
 
@@ -221,6 +221,8 @@ uint is_page_in_disk(struct proc *p, int va);
 
 int get_nru_free_slot_idx(const struct proc *p);
 int get_nru_oldest_idx(const struct proc *p);
+
+void reset_ref_flags(const struct proc* p);
 
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))

@@ -1,5 +1,6 @@
 #define MAX_TOTAL_PAGES 30
 #define MAX_PSYC_PAGES 15
+#define REF_FLAG_RESET_INTERVAL 100
 
 // Per-CPU state
 struct cpu {
@@ -40,8 +41,6 @@ struct pg_info {
   enum pg_state state;  
   uint va;
   pde_t* pgdir;
-  uint ref; // reference bit
-  uint mod; // modify bit
 };
 
 enum procstate { UNUSED, EMBRYO, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
@@ -62,6 +61,7 @@ struct proc {
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
 	int ticks;
+  int prev_ticks; // for resetting reference flags
 	int tickets;
   //Swap file. must initiate with create swap file
   struct file *swapFile;			//page file
