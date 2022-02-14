@@ -234,7 +234,7 @@ void print_queues(struct proc* p) {
     }
     // cprintf("\t%d %d %d\n", i, p->disk_pg_info[i].va, p->disk_pg_info[i].state);
   }
-  cprintf("\n");
+  // cprintf("\n");
 }
 
 // Allocate page tables and physical memory to grow process from oldsz to
